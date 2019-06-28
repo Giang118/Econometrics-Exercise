@@ -1,0 +1,143 @@
+#Advanced Econometrics Assignment (Giang)
+rm(list=ls())
+mydata <- read.csv("~/archive/datasetCouple_14.csv")
+datasetCouple_14=mydata[,-1]
+
+#Question 1
+cor(datasetCouple_14)
+summary(datasetCouple_14)
+library(stargazer)
+stargazer(datasetCouple_14, type = "text", title="Descriptive statistics", digits=1, out="table1.txt")
+library(corrplot)
+cor_datasetCouple_14<-cor(datasetCouple_14)
+corrplot(cor_datasetCouple_14, method="circle")
+corrplot(cor_datasetCouple_14, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45)
+
+#Question 2 and 3
+lm_wage_h_1<-lm(wage_h ~ school, data=datasetCouple_14)
+summary(lm_wage_h_1)
+stargazer(lm_wage_h_1,type="text",title="OLS MODEL", out="OLS_2")
+
+#Question 4:
+experience00<-datasetCouple_14$experience
+experiencesq<-experience00^2
+#OLS Estimation for dependent variable logwage_h
+ols_logwage<- lm(logwage_h ~ male+married+school+experience+experiencesq+d_north+d_south+d_partime+d_agri+d_indu+d_pa,data= datasetCouple_14)
+summary(ols_logwage)
+
+completemodel<-lm(logwage_h ~ male+married+school+experience+experiencesq+d_north+d_south+d_partime+d_agri+d_indu+d_pa,data=datasetCouple_14)
+summary(completemodel)
+stargazer(completemodel,type="text",title="OLS MODEL", out="completemodel")
+
+#Question 5
+schoold_north<-datasetCouple_14$school* datasetCouple_14$d_north
+schoold_south<-datasetCouple_14$school* datasetCouple_14$d_south
+estimatedmodel_school_int<-lm(logwage_h~school+d_north+d_south+schoold_north+schoold_south,data = datasetCouple_14)
+summary(estimatedmodel_school_int)
+stargazer(estimatedmodel_school_int,type="text",title="OLS MODEL", out="estimatedmodel")
+
+#F-test: same regression line
+library(car)
+linearHypothesis(estimatedmodel_school_int, c("schoold_north=0", "schoold_south=0"))
+#RLS Estimation
+#First Step
+restricted_model<-lm(logwage_h~school+d_north+d_south,data= datasetCouple_14)
+summary(restricted_model)
+library(stargazer)
+stargazer(restricted_model,type="text",title="OLS MODEL", out="restrictedmodel")
+resid <- residuals(restricted_model)
+#second step
+model1<-lm(resid~school+d_north+d_south+schoold_north+schoold_south,data= datasetCouple_14)
+summary(model1)
+stargazer(model1,type="text",title="OLS MODEL", out="bilgesumadenli3")
+linearHypothesis(model1,c("schoold_north=0","schoold_south=0"))
+
+#Question 6
+
+# Test for endogeneity
+
+firstStage<-lm(school~male + married+school_father+school_mother+experience + (experience^2) + d_north + d_south + d_partime + d_agri + d_indu + d_pa, data=datasetCouple_14)
+resid.firstStage<-firstStage$residuals
+estimate_CF<-lm(logwage_h ~ male + married + school + experience + (experience^2) + d_north + d_south + d_partime + d_agri + d_indu + d_pa + resid.firstStage, data = datasetCouple_14)
+summary(estimate_CF)
+
+library(stargazer)
+stargazer(firstStage, OLSnote, type="text")
+
+# Test of validity
+u_hat<-estimate_TSLS$residuals
+u_regress<-lm(u_hat~male + married + experience + I(experience^2) + d_north + d_south + d_partime + d_agri + d_indu + d_pa, data = datasetCouple_14)
+summary(u_regress)
+library(stargazer)
+stargazer(u_regress, OLSnote, type="text")
+
+
+test_statistic<-length(datasetCouple_14$X)*summary(u_regress)$r.squared
+test_statistic
+
+
+# Test of weakness of instrument
+summary(firstStage)
+library(stargazer)
+stargazer(firstStage, OLSnote, type="text")
+
+
+# Estimate the model with TSLS
+
+estimate_TSLS<-lm(logwage_h ~ male + married + firstStage$fitted + experience + I(experience^2) + d_north + d_south + d_partime + d_agri + d_indu + d_pa + resid.firstStage, data = datasetCouple_14)
+summary(estimate_TSLS)
+library(stargazer)
+stargazer(estimate_TSLS, OLSnote, type="text")
+
+
+#PART 2: PANEL DATA
+#Question 1
+
+library(readstata13)
+dat <- read.dta13("http://fmwww.bc.edu/ec-p/data/wooldridge/wagepan.dta")
+save.dta13(dat, file="wagepan.dta")
+
+#creating a pdataframe. 
+library(Formula)
+library(plm)
+pPada<-pdata.frame(dat,index=c("nr","year"))
+pdata.frame(dat,index=c("nr","year"))
+class(pPada)
+str(pPada)
+summary(pPada)
+
+# Question 2 
+
+#estimate using the pooling estimator 
+library(plm)
+lwage<-pPada$lwage
+black <- pPada$black
+fm <- lwage ~ pPada$educ +black+pPada$hisp+pPada$exper+pPada$expersq+pPada$married+pPada$union
+poolmodel <- plm(fm, pPada, model="pooling")
+summary(poolmodel)
+
+#Question 3
+
+#run the Hausman test for FE or RE. Comment the result of the test, as well as the regression results.
+library(plm)
+library(Formula)
+
+# Apply fe model 
+library(plm)
+feModel <- plm(fm, pPada, model ="within")
+summary(feModel)
+#we got fe model 
+#now fe test whether fe or ols is better 
+
+pFtest(feModel, poolmodel)
+#p-value is < 0.05, for this reason fixed effects model is a better choice
+
+#Apply re model
+library(plm)
+reModel <-plm(fm, pPada, model="random")
+summary(reModel)
+
+#to compare re-model and fe-model we will use Hausman test
+phtest(feModel,reModel)
+#our p-value < 0.05 then we must use fixed effects
